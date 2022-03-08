@@ -1,0 +1,520 @@
+---
+title: "Bellabeat Marketing Project: A Case Study"
+author: "Mario Severo"
+date: "07-02-2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+This R Markdown notebook documents the steps undertaken for the data analysis case study entitled, **"How Can a Wellness Technology Company Play It Smart?"**. It serves as a *capstone* for the **Google Data Analytics Course**. This notebook explains the the data analytic processes performed by the author to arrive to the key insights and proposal for a business task from a high-tech company.  
+
+***
+
+## 1. The client and stakeholders
+The client, [**Bellabeat**](https://bellabeat.com/about/), is a a high-tech manufacturing company specializing in health-focused products for women. They develop wearable smart devices and accompanying products that track biometric and lifestyle data to aid women improve their overall health.   
+
+![ ](https://bellabeat.com/wp-content/uploads/2021/10/female-health-trackers.jpg)  
+
+The stakeholders for this project includes:  
+
+* Urška Sršen: Bellabeat’s cofounder and Chief Creative Oﬃcer  
+* Sando Mur: Mathematician and Bellabeat’s cofounder; key member of the Bellabeat executive team    
+* Bellabeat marketing analytics team: A team of data analysts responsible for collecting, analyzing, and reporting data that helps guide Bellabeat’s marketing strategy.  
+
+## 2. The business task
+The business task is to identify trends from an open-access data on smart device usage that can be applied for a marketing strategy plan to Bellabeat customers. Specifically, the following questions are to be answered:  
+
+1.	What are some trends in smart device usage?  
+2.	How could these trends apply to Bellabeat customers?  
+3.	How could these trends help influence Bellabeat marketing strategy?  
+
+
+## 3. The dataset
+The dataset, [**FitBit Fitness Tracker Data**](https://www.kaggle.com/arashnic/fitbit), is an [**open-access**](https://zenodo.org/record/53894#.YgFyodXMLDe) **personal tracker data** collected from Fitbit users (*n* = 33) who participated in a survey on Amazon Mechanical Turk from 03/12/2016 till 05/12/2016. It contains time series data on the following users' information, such as number of steps, distance traveled, activity calories, sleeping pattern, heart rate, etc.   
+
+Some **data limitations** to consider: 
+
+* Age, gender, health-status, and other relevant sociodemographic information of participants were not accounted for (possibly a heterogeneous sample)
+* Sample size (*n* = 33) was not consistent across all the measures of the dataset
+* Some data inconsistencies (due to differences in Fitbit tracker types and individual tracking behaviors/preferences)  
+* Data is not recently collected nor updated
+* Data is external (not provided by the client)  
+
+## 4. Data analysis steps
+This section details the data analysis steps performed on the Fitbit dataset. For the purposes of this project, I mainly focused on two pieces of information with relatively ample sample size and data points. Specifically, the explorarory data analysis (EDA) performed here centered on the **1) physical activity output record** and the **2) sleep log**.
+
+### 4.1 Setting-up
+Begin with loading previously installed packages that will be used for different reasons: 1)`pacman` for loading packages at once; 2) `tidyverse`, `skimr`, `janitor`, and `lubridate` for data cleaning, organization, and transformation; 3) `ggplot2` and `cowplot` for data visualization.  
+
+```{r load packages}
+library(pacman)
+pacman::p_load(tidyverse, ggplot2, skimr, janitor, lubridate, cowplot)
+```
+
+Next, loading up the Fitbit Tracker Dataset. It is composed of several csv files logging the following users' information.   
+
+The *physical activity output log* contains the 1) *number of daily step* recorded by the Fitbit users, 2) the *walking distance* they covered, the *calories* they burned, and the *duration of the activities of varying intensities* that they performed within the recording period. This particular recording has two main data frames, one for **daily step recordings**, and another for **hourly step recordings**. 
+
+The *sleep log* contains the daily sleep duration (in minutes), the time spent in bed, and the number of sleep. For the sleep analysis, I mainly focused on the first two information. 
+
+```{r load dataset, echo=FALSE}
+# Physical activity output data frames
+# Daily steps
+daily_steps <- read_csv('Fitbit_Fitness_Tracker_Data//dailyActivity_merged.csv') 
+# Hourly steps 
+int <- read_csv('Fitbit_Fitness_Tracker_Data//hourlyIntensities_merged.csv')
+cal <- read_csv('Fitbit_Fitness_Tracker_Data//hourlyCalories_merged.csv')
+step <- read_csv('Fitbit_Fitness_Tracker_Data//hourlySteps_merged.csv')
+
+# Sleep data frame
+sleep <- read_csv('Fitbit_Fitness_Tracker_Data//sleepDay_merged.csv')
+```
+
+Note that the hourly steps data frame requires merging the three csv files into one. Across all three tables, the variables 'Id' and 'ActivityHour' serve as primary keys. The step taken to merge them is shown below.
+
+```{r merge hourly steps, echo=FALSE}
+hourly_steps <- left_join(int, cal, by = c('Id' = 'Id', 'ActivityHour' = 'ActivityHour')) %>%
+  left_join(., step, by = c('Id' = 'Id', 'ActivityHour' = 'ActivityHour')) 
+```
+
+### 4.2 Data cleaning and transformation 
+#### 4.2.1 Physical activity output log
+##### 4.2.1.1 Daily activity log
+
+```{r daily activity log, echo=FALSE}
+# Preview data frame
+skim_without_charts(daily_steps)
+
+# Check if there are any missing cases (N/A) in the data frame
+apply(daily_steps, 2, function(x) any(is.na(x)))
+
+# Clean variable names, convert variable(s) to appropriate data type(s), and create new variables from existing ones
+cleaned_daily_steps <- daily_steps %>% 
+  # clean variable names
+  clean_names() %>% 
+  # convert to date type
+  mutate(date = mdy(activity_date)) %>%
+  # extract day of the week (as ordinals)
+  mutate(day = wday(date)) %>%  
+  # create variable which shows names of the days in a week
+  mutate(day_of_week = case_when(day == 1 ~ 'Sun', 
+                                 day == 2 ~ 'Mon',
+                                 day == 3 ~ 'Tues',
+                                 day == 4 ~ 'Wed',
+                                 day == 5 ~ 'Thurs',
+                                 day == 6 ~ 'Fri', 
+                                 day == 7 ~ 'Sat')) %>%
+  # make day_of_week as ordered factor
+  mutate(day_of_week = factor(day_of_week, levels = c('Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat', 'Sun'))) %>% 
+  # create a variable indicating the week type 
+  mutate(week_type = case_when(day_of_week == 'Mon' ~ 'weekday',
+                               day_of_week == 'Tues' ~ 'weekday',
+                               day_of_week == 'Wed' ~ 'weekday',
+                               day_of_week == 'Thurs' ~ 'weekday',
+                               day_of_week == 'Fri' ~ 'weekday',
+                               day_of_week == 'Sat' ~ 'weekend',
+                               day_of_week == 'Sun' ~ 'weekend')) %>% 
+  # select and rearrange column order 
+  select(id, date, day_of_week, week_type, total_steps, total_distance, very_active_distance:calories) 
+```
+
+##### 4.2.1.2 Hourly steps
+
+```{r hourly steps, echo=FALSE}
+# Preview data frame
+skim_without_charts(hourly_steps)
+
+# Check if there are any missing cases (N/A) in the data frame
+apply(hourly_steps, 2, function(x) any(is.na(x)))
+
+
+# Clean variable names, convert variable(s) to appropriate data type(s), and create new variables from existing ones
+cleaned_hourly_steps <- hourly_steps %>% 
+  # clean variable names
+  clean_names() %>% 
+  # rename variable
+  rename(total_step = step_total) %>% 
+  # convert to datetime type
+  mutate(hour = mdy_hms(activity_hour)) %>% 
+  # extract day of the week (as ordinals)
+  mutate(day = wday(hour)) %>%  
+  # create variable which shows names of the days in a week
+  mutate(day_of_week = case_when(day == 1 ~ 'Sun', 
+                                 day == 2 ~ 'Mon',
+                                 day == 3 ~ 'Tues',
+                                 day == 4 ~ 'Wed',
+                                 day == 5 ~ 'Thurs',
+                                 day == 6 ~ 'Fri', 
+                                 day == 7 ~ 'Sat')) %>%
+  # make day_of_week as ordered factor
+  mutate(day_of_week = factor(day_of_week, levels = c('Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat', 'Sun'))) %>% 
+  # create a variable indicating the week type 
+  mutate(week_type = case_when(day_of_week == 'Mon' ~ 'weekday',
+                               day_of_week == 'Tues' ~ 'weekday',
+                               day_of_week == 'Wed' ~ 'weekday',
+                               day_of_week == 'Thurs' ~ 'weekday',
+                               day_of_week == 'Fri' ~ 'weekday',
+                               day_of_week == 'Sat' ~ 'weekend',
+                               day_of_week == 'Sun' ~ 'weekend')) %>% 
+  # create a variable extracting the time of the day
+    mutate(time_of_day = hour(hour)) %>% 
+  # select and rearrange column order 
+  select(id, hour, time_of_day, day_of_week, week_type,total_intensity:total_step) 
+```
+
+#### 4.2.2 Sleep log 
+
+```{r sleep, echo=FALSE}
+# Preview data frame
+skim_without_charts(sleep)
+
+# Check if there are any missing cases (N/A) in the data frame
+apply(sleep, 2, function(x) any(is.na(x)))
+
+# Clean variable names, convert variable(s) to appropriate data type(s), and create new variables from existing ones
+cleaned_sleep <- sleep %>% 
+  # clean variable names
+  clean_names() %>% 
+  # convert to date type
+  mutate(date = mdy_hms(sleep_day)) %>% 
+  # extract day of the week (as ordinals)
+  mutate(day = wday(date)) %>%  
+  # create variable which shows names of the days in a week
+  mutate(day_of_week = case_when(day == 1 ~ 'Sun', 
+                                 day == 2 ~ 'Mon',
+                                 day == 3 ~ 'Tues',
+                                 day == 4 ~ 'Wed',
+                                 day == 5 ~ 'Thurs',
+                                 day == 6 ~ 'Fri', 
+                                 day == 7 ~ 'Sat')) %>%
+  # make day_of_week as an ordered factor
+  mutate(day_of_week = factor(day_of_week, levels = c('Mon', 'Tues', 'Wed', 'Thurs', 'Fri', 'Sat', 'Sun'), ordered = TRUE)) %>% 
+  # create a variable indicating the week type 
+  mutate(week_type = case_when(day_of_week == 'Mon' ~ 'weekday',
+                               day_of_week == 'Tues' ~ 'weekday',
+                               day_of_week == 'Wed' ~ 'weekday',
+                               day_of_week == 'Thurs' ~ 'weekday',
+                               day_of_week == 'Fri' ~ 'weekday',
+                               day_of_week == 'Sat' ~ 'weekend',
+                               day_of_week == 'Sun' ~ 'weekend'))  %>% 
+  # create variables that convert steps and total time in bed in hours instead of minutes      
+  mutate(sleep_in_hours = total_minutes_asleep/60,
+         total_time_in_bed_hours = total_time_in_bed/60) %>% 
+  # select and rearrange column order 
+  select(id, date, day_of_week:week_type, total_sleep_records:total_time_in_bed, sleep_in_hours:total_time_in_bed_hours) 
+```
+
+### 4.3 Data analysis
+#### 4.3.1 Daily physical activity output analysis
+##### 4.3.1.1 Average daily physical output in a week
+When exploring the average daily physical output of Fitbit users (*n* = 33), as measured by the daily steps they make (see plot A), the distance they cover (see plot B), and the calories they burn (see plot C) when walking, they seem to show consistency in their daily outputs. As the figures below show, **changes in the daily step count, the walking distance, and the burned calories do not vary drastically everyday,** which seem to suggest a regularity and structure in their everyday activities.  
+
+Earlier physical activity recommendations for adults (18-64 yrs old) by the World Health Organization (2008) have used daily steps as one of the indices (i.e., pedometer index) for a healthy lifestyle promotion. Based on which, the **Fitbit users would qualify as a 'somewhat active' group**, with daily steps falling within 7500 - 9999 (see plot A). While this is below from the recommended 10,000 steps per day (WHO, 2008), the Fitbit users are still far from having a sedentary lifestyle, which is below 5,000 steps. 
+
+```{r Average daily physical output in a day of week, echo=FALSE}
+# Number of daily steps vs. Day of the week
+steps_in_week <- ggplot(data = cleaned_daily_steps, aes(x = day_of_week, y = total_steps)) + 
+  stat_summary(fun = mean, geom = 'bar', width = 0.6, fill='orchid3') +
+  stat_summary(fun.data = mean_se, geom='errorbar', width = 0.25) + 
+  labs(title = 'Daily Steps vs. Day of the Week', x = 'Day of the Week', y ='Steps (count)') +
+  theme_bw() + 
+  geom_hline(yintercept = 5000, linetype = 'dashed', color = 'red', size = 1) +
+  annotate('text', x = 4, y = 4800, label = 'Sedentary Lifestyle', 
+           color = 'black') +
+  geom_hline(yintercept = 7500, linetype = 'dashed', color = 'darkorange', 
+             size = 1) +
+  annotate('text', x = 4, y = 7800, label = 'Somewhat Active', 
+           color = 'black') +
+  geom_hline(yintercept = 10000, linetype = 'dashed', color = 'darkgreen', 
+             size = 1) +
+  annotate('text', x = 4, y = 10300, label = 'Active', color = 'black')
+
+# Distance walked vs. Day of the Week
+distance_in_week <- ggplot(data = cleaned_daily_steps, aes(x = day_of_week, y = total_distance)) + 
+  stat_summary(fun = mean, geom = 'bar', width = 0.6, fill='coral3') +
+  stat_summary(fun.data = mean_se, geom='errorbar', width = 0.25) + 
+  labs(title = 'Distance Walked vs. Day of the Week', x = 'Day of the Week', y ='Distance (km)') +
+  theme_bw() 
+
+# Calories burned vs. Day of the Week
+calories_in_week <- ggplot(data = cleaned_daily_steps, aes(x = day_of_week, y = calories)) + 
+  stat_summary(fun = mean, geom = 'bar', width = 0.6, fill='turquoise3') +
+  stat_summary(fun.data = mean_se, geom='errorbar', width = 0.25) + 
+  labs(title = 'Calories Burned vs. Day of the Week', x = 'Day of the Week', y ='Calories (kcal)') + 
+  theme_bw()
+
+# Arrange the plots in a grid using the cowplot package
+steps_plot <- plot_grid(steps_in_week, distance_in_week, calories_in_week, labels = c('A', 'B', 'C'), label_size = 12)
+
+steps_plot
+```
+
+##### 4.3.1.2 Relationship between daily activity and calories burned
+When exploring the relationship between daily steps of the Fitbit users and calories they burned, the plot shows a positive relationship between the two variables: **the more steps they make, the more calories they burn**.  
+
+```{r relationship between steps and calories, echo=FALSE}
+step_cal_cor <- ggplot(data = cleaned_daily_steps, aes(x = total_steps, y = calories, color = id)) +
+  geom_point() +
+  geom_smooth() + 
+  geom_jitter() +
+  labs(title = 'Daily Steps and Calories Burned Correlation', x = 'Steps(count)', y = 'Calories(kcal)')
+
+step_cal_cor
+```
+
+Similarly, when exploring the relationship between total distance they walked and the calories they burned, the plot shows a positive relationship between the two variables: **the more distance they cover walking, the more calories they burn**. 
+
+```{r relationship between distance and calories, echo=FALSE}
+dist_cal_cor <- ggplot(data = cleaned_daily_steps, aes(x = total_distance, y = calories, color = id)) +
+  geom_point() +
+  geom_smooth() + 
+  geom_jitter() + 
+  labs(title = 'Distance Walked and Calories Burned Correlation', x = 'Distance walked (km)', y = 'Calories(kcal)')
+
+dist_cal_cor
+```
+
+##### 4.3.1.3 Average time spent doing daily activities of varying intensity
+When exploring the average time spent by Fitbit users doing daily activities of varying intensity level, the lion's share of the time (i.e., > 16 hours) comes from doing sedentary activities. This is no surprise as it relates to performing daily living activities. The rest of the remaining time is spent for active movements. More importantly, a small portion of the day is spent for at least for 'very active' movements (i.e., > 30 minutes). This very active movement translate to performing intentional exercises.It is important to note, however, that due to some data inconsistencies, there are unaccounted time in a day for activities that the Fitbit tracker do not qualify for the intensity level (referred to here as unaccounted). This is a limitation of the dataset to keep in mind, posing some caveat into the extent of generalizability of the current analysis.
+
+```{r duration of activity vs. intensity categories, echo=FALSE}
+# Duration of physical activity of varying intensity
+activity_per_intensity <- cleaned_daily_steps %>% 
+  select(id:week_type, very_active_minutes:sedentary_minutes) %>% 
+  mutate(total_minutes_accounted = rowSums(.[5:8]), 
+         unaccounted_minutes = (60*24) - total_minutes_accounted) %>%
+  mutate(act_week = week(date)) %>% 
+  select(id:sedentary_minutes, unaccounted_minutes:act_week) %>% 
+  gather(intensity_category, duration, very_active_minutes:unaccounted_minutes,   factor_key = TRUE) %>% 
+  mutate(intensity_category = recode(intensity_category,
+         very_active_minutes = 'very active',
+         fairly_active_minutes = 'fairly active',
+         lightly_active_minutes = 'lightly active',
+         sedentary_minutes = 'sedentary',
+         unaccounted_minutes = 'unaccounted')) %>%
+  mutate(duration_in_hours = round(duration/60, digits = 2),
+         percentage = round((duration/(60*24)*100), digits = 2)) 
+
+# Plot of duration of daily activity per intensity category 
+intensity <- ggplot(data = activity_per_intensity, aes(x = intensity_category, y = duration_in_hours)) + 
+  stat_summary(fun = mean, geom = 'bar', width = 0.7, fill = 'violetred3') +
+  stat_summary(fun.data = mean_se, geom='errorbar', width = 0.25) + 
+  labs(title = 'Activity Duration per Intensity', subtitle = 'Average time spent doing daily activities of varying intensities', x = 'Intensity Categories', y = 'Duration (Hours)') + 
+  theme_bw() +
+  scale_y_continuous(breaks = seq(0, 24, by = 4)) +
+  geom_hline(yintercept = 24, linetype = 'dashed', color = 'deeppink', size = 1)
+
+intensity
+```
+
+When comparing the duration of the activities of varying intensity level every day, they do not seem to vary drastically. Sedentary activities (> 15 hours) remain to take most of the time per day, while only a small portion of the day (> 30 mins) is spent for very active movements every day. We focus more on the 'very active' movements in the next section.  
+
+```{r activity intensity, echo = FALSE}
+intensity_week <- ggplot(data = activity_per_intensity, aes(x = day_of_week, y = duration_in_hours, fill = day_of_week)) + 
+  stat_summary(fun = mean, geom = 'bar', width = 0.6) +
+  stat_summary(fun.data = mean_se, geom='errorbar', width = 0.25) + 
+  labs(title = 'Activity Duration per Intensity', subtitle = 'Average time spent doing daily activities of varying intensity in a week', x = 'Day of the week', y = 'Duration (hours)') +
+  facet_wrap(~intensity_category) + 
+  scale_fill_discrete(name = 'Day of the Week') + 
+  theme_bw()
+
+intensity_week
+```
+
+
+##### 4.3.1.4 Average time spent doing very active task vs. Days of the week
+When focusing only on average time spent doing very active tasks everyday, **it seems that Fitbit users allot at least 20 minutes doing intentional exercises**. This falls within the global recommendations of WHO on physical activity for health, whereby adults (aged 18-64) must do at least 75 minutes of vigorous-intensity aerobic physical activity throughout the week (2010).  
+
+```{r intense activity vs. day of week, echo = FALSE}
+intense_activity <- activity_per_intensity %>% 
+  filter(intensity_category == 'very active')
+
+active_moments <- ggplot(data = intense_activity, aes(x = day_of_week, y = duration)) + 
+  stat_summary(fun = mean, geom = 'bar', width = 0.6, fill = 'springgreen3') +
+  stat_summary(fun.data = mean_se, geom='errorbar', width = 0.25) + 
+  theme_bw() + 
+  labs(title = 'Duration of Intense Activity per Day', subtitle = 'Average time doing very active task per day', x = 'Day of the Week', y = 'Duration (minutes)')
+
+active_moments
+```
+
+
+#### 4.3.2 Hourly physical activity output analysis 
+##### 4.3.2.1 Hourly physical activity output analysis
+When exploring the physical activity output of Fitbit users (*n* = 33) recorded hourly, **it seems that the daily step taken (see plot A) and the calories burned (see plot B) tend to ramp up around the time users start their day**, i.e., 7:00. Both measures also tend to peak towards the evening, after 17:00, which possibly reflect after-work movements/activities (such as commuting or shopping). 
+
+```{r hourly activity analysis, echo=FALSE}
+# Daily steps
+ave_step_by_hour <- ggplot(data = cleaned_hourly_steps, aes(x = time_of_day, y = total_step)) +
+  stat_summary(fun = mean, geom = 'line', size = 1, color = 'orchid3') +
+  stat_summary(fun.data = mean_se, geom='ribbon', size = 1, alpha = 0.2, 
+               fill = 'orchid3') + 
+  labs(title = 'Daily Steps by the Hour', x = 'Time of the Day', 
+       y ='Steps (count)') + 
+  scale_x_continuous(breaks = seq(0, 24, by = 2)) +
+  geom_vline(xintercept = 7, linetype = 'dashed', color = 'deeppink', 
+             size = 1) +
+  geom_vline(xintercept = 17, linetype = 'dashed', color = 'darkblue', 
+             size = 1)
+
+# Calories burned
+ave_cal_by_hour <- ggplot(data = cleaned_hourly_steps, aes(x = time_of_day, y = calories)) +
+  stat_summary(fun = mean, geom = 'line', size = 1, color = 'turquoise3') +
+  stat_summary(fun.data = mean_se, geom='ribbon', size = 1, alpha = 0.2, 
+               fill = 'turquoise3') + 
+  labs(title = 'Calories Burned by the Hour', x = 'Time of the Day', 
+       y ='Calories (kcal)') + 
+  scale_x_continuous(breaks = seq(0, 24, by = 2)) +
+  geom_vline(xintercept = 7, linetype = 'dashed', color = 'deeppink', 
+             size = 1) +
+  geom_vline(xintercept = 17, linetype = 'dashed', color = 'darkblue', 
+             size = 1)
+
+ave_hourly_act_plot <- plot_grid(ave_step_by_hour, ave_cal_by_hour, labels = c('A', 'B'), label_size = 12, ncol = 1)
+
+ave_hourly_act_plot
+```
+
+
+##### 4.3.2.2 Hourly physical activity output analysis per week type
+When comparing the hourly physical activity output on weekends vs. weekdays, both **the increase in the daily steps (see plot A) and calories burned (see plot B) tend to be delayed at a later time on weekends than weekdays**. This is to be expected when we assume that Fitbit users follow a more rigid working schedule on the weekdays and take a more relaxed approach to start their day on the weekends. **It is also interesting to note that both daily steps and calories burned tend to be higher during the weekends than the weekdays from 11:00 - 16:00**. This could be due to the differences in the activities that Fitbit users engaged in opposite the week types. It could be assumed that users perform more activities related to health (such as exercise or walking) or leisure (such as shopping or strolling) during the weekends, while they work during the weekdays. Moreover, there is a shift in the increase of the daily steps and the calories burned at the later time of the day between the week types. After 16:00, both measures tend to be higher during the weekdays than the weekends. This could be attributed to the users' after-work movements/activities on weekdays.
+
+```{r hourly activity analysis per week type, echo=FALSE}
+# Daily steps
+step_by_hour <- ggplot(data = cleaned_hourly_steps, aes(x = time_of_day, y = total_step)) +
+  stat_summary(fun = mean, geom = 'line', size = 1, aes(color = week_type)) +
+  stat_summary(fun.data = mean_se, geom='ribbon', size = 1, alpha = 0.2, aes(fill = week_type), show.legend = FALSE) + 
+  labs(title = 'Daily Steps by the Hour', subtitle = 'Comparing the hourly steps on weekdays vs. weekends', x = 'Time of the Day', y ='Steps (count)') + 
+  scale_color_discrete(name = "Week Type") + 
+  scale_x_continuous(breaks = seq(0, 24, by = 2)) +
+  geom_vline(xintercept = 7, linetype = 'dashed', color = 'deeppink',
+             size = 1) +
+  geom_vline(xintercept = 17, linetype = 'dashed', color = 'darkblue', 
+             size = 1)
+
+# Calories burned
+cal_by_hour <- ggplot(data = cleaned_hourly_steps, aes(x = time_of_day, y = calories)) +
+  stat_summary(fun = mean, geom = 'line', size = 1, aes(color = week_type)) +
+  stat_summary(fun.data = mean_se, geom='ribbon', size = 1, alpha = 0.2, aes(fill = week_type), show.legend = FALSE) + 
+  labs(title = 'Calories Burned by the Hour', subtitle = 'Comparing the hourly calories burned on weekdays vs. weekends', x = 'Time of the Day', y ='Calories (kcal)') + 
+  scale_color_discrete(name = "Week Type") + 
+  scale_x_continuous(breaks = seq(0, 24, by = 2)) +
+  geom_vline(xintercept = 7, linetype = 'dashed', color = 'deeppink', 
+             size = 1) +
+  geom_vline(xintercept = 17, linetype = 'dashed', color = 'darkblue', 
+             size = 1)
+
+
+hourly_act_plot <- plot_grid(step_by_hour, cal_by_hour, labels = c('A', 'B'), label_size = 12, ncol = 1)
+
+hourly_act_plot
+```
+
+#### 4.3.3 Sleep analysis
+##### 4.3.3.1 Daily sleep intake
+When exploring for the average sleep intake of Fitbit users (*n* = 24), they seem to show minimal variations in the total hours of sleep they get per day (see plot A). **The Fitbit users still seem to reach the recommended hours of sleep for adults (aged 18–60 years), which is 7 or more hours per night** (Watson, Badr, Belenky, et al., 2015). Note, however, that there seems to be a tendency to get lesser sleep on working days (such as Tues or Thurs), which might be suggestive of a busy and structured working period for the users. When comparing sleep intake on the weekdays vs. the weekends, the users tend to catch up more sleep during the latter than the former (see plot B).  
+
+```{r sleep analysis, echo=FALSE}
+# Daily sleep
+sleep_plot <- ggplot(data = cleaned_sleep, aes(x = day_of_week, y = sleep_in_hours)) + 
+  stat_summary(fun = mean, geom = 'bar', width = 0.6, fill='slategray4') +
+  stat_summary(fun.data = mean_se, geom='errorbar', width = 0.25) + 
+  labs(title = 'Sleep Intake vs. Day of the Week', x = 'Day of the Week', 
+       y ='Sleep (hours)') +
+  theme_bw() + 
+  geom_hline(yintercept = 7, linetype = 'dashed', color = 'deeppink', 
+             size = 1) +
+  scale_y_continuous(breaks = seq(0, 8, by = 2)) +
+  annotate('text', x = 4, y = 7.2, label = 'Recommended hours a day', 
+           color = 'black')
+
+# Sleep on weekdays vs. weekends
+sleep_week_plot <- ggplot(data = cleaned_sleep, aes(x = week_type, y = sleep_in_hours)) + 
+  stat_summary(fun = mean, geom = 'bar', width = 0.5, fill='slategray4') +
+  stat_summary(fun.data = mean_se, geom='errorbar', width = 0.25) + 
+  labs(title = 'Sleep Intake vs. Week Type', x = 'Week Type', 
+       y ='Sleep (hours)') +
+  theme_bw() + 
+  geom_hline(yintercept = 7, linetype = 'dashed', color = 'deeppink', 
+             size = 1) + 
+  scale_y_continuous(breaks = seq(0, 8, by = 2)) +
+  annotate('text', x = 1.5, y = 7.5, label = 'Recommended hours a day', 
+           color = 'black')
+
+sleep_pattern_plot <- plot_grid(sleep_plot, sleep_week_plot, labels = c('A', 'B'), label_size = 12)
+
+sleep_pattern_plot 
+```
+
+
+##### 4.3.3.1 Time spent in bed analysis
+When exploring for the time spent in bed, which Fitbit defines as the time spent asleep, restless, and awake during a defined sleep record period, users tend to show slight variations on average bed time across the different days of the week (see plot A). Generally, **Fitbit users tend to stay in bed more than 7 hours**. Moreover, **they tend to spend more time in bed on average on the weekends than the weekdays** (see plot B).   
+
+```{r time in bed analysis, echo=FALSE}
+# Time spend in bed
+bed_plot <- ggplot(data = cleaned_sleep, aes(x = day_of_week, y = total_time_in_bed_hours)) + 
+  stat_summary(fun = mean, geom = 'bar', width = 0.6, fill='darkorange') +
+  stat_summary(fun.data = mean_se, geom='errorbar', width = 0.25) + 
+  labs(title = 'Time in Bed vs. Day of the Week', x = 'Day of the Week', 
+       y ='Sleep (hours)') +
+  theme_bw() +
+  scale_y_continuous(breaks = seq(0, 8, by = 2))
+
+# Time in Bed on weekdays vs. weekends
+bed_week_plot <- ggplot(data = cleaned_sleep, aes(x = week_type, y = total_time_in_bed_hours)) + 
+  stat_summary(fun = mean, geom = 'bar', width = 0.4, fill='darkorange') +
+  stat_summary(fun.data = mean_se, geom='errorbar', width = 0.25) + 
+  labs(title = 'Time in Bed vs. Week Type', x = 'Week Type', 
+       y ='Sleep (hours)') +
+  theme_bw() + 
+  scale_y_continuous(breaks = seq(0, 8, by = 2))
+
+bed_pattern_plot <- plot_grid(bed_plot, bed_week_plot, labels = c('A', 'B'), label_size = 12)
+
+bed_pattern_plot
+```
+
+## 5. Discussion
+To recap, this data analysis case study aimed to shed light on how consumers use smart devices in the market for the client, Bellabeat. Specifically, using an open-access data from users of another brand’s fitness tracker, an EDA was conducted on various biometric and physical activity information to uncover trends on smart device usage. These identified trends would ultimately guide upcoming marketing strategy  for Bellabeat, to cater to the demands and needs of their own customers. This section begins by outlining these key trends. Then, it ends with the recommendations for the company's marketing strategy.
+
+### 5.1 Key trends on smart device usage
+**1) Physical activity outputs and sleep records show small variations per day**  
+One noticeable trend from the of Fitbit users was the little variations in their outputs when averaged per day. From the measures of their total steps, the distance they walk, the calories they burn, the duration of physical activities to their sleep intake - their outputs tend to show some consistency every day. This could translate into users having some regularity and structure in their daily activities that their smart device can record, monitor, and analyze.
+
+**2) Average daily step output indicates somewhat active lifestyle**  
+Another trend apparent from the EDA was the high average daily step output of the Fitbit users in this study. Daily steps on average was higher than 7,500, which falls within the ‘somewhat active’ lifestyle category of the earlier health index for adults (aged 16-64) by the WHO (2008). This indicates that Fitbit users are far from living a sedentary lifestyle, but could improve on increasing and reaching recommended daily 10,000 steps using their smart device.   
+
+**3) Daily steps and walking distance positively correlate with calories burned**    
+This EDA also highlighted the positive relationship between daily steps of Fitbit users and the calories they burned, as well as the distance they covered and the calories they burned. Of course, while this pattern is to be expected, it could be used to tap into the importance smart device in setting up and pursuing concrete health-related goals. I will talk more about this in the recommendation section. 
+
+**4) Fitbit users are ‘very active’ at least 20 minutes per day**  
+This EDA also uncovered that on average, Fitbit users engage in very active movements at least 20 minutes a day. This very active period could translate into users doing intentional exercises every day. Following the global recommendations of WHO (2010) on physical activity for health for adults (aged 18-64), this could qualify as performing at least 75 minutes of vigorous-intensity aerobic physical activity throughout the week. However, to yield additional health benefits, WHO recommendations (2010) emphasize on increasing moderate-intensity physical activity to 300 minutes a week or doing 150 minutes of vigorous-intensity physical activity a week, (or an equivalent combination of the two). Keeping this health recommendation in mind can be used for the marketing strategy of Bellabeat smart device, which will be discussed further later.  
+
+**5) Differences in physical activity outputs and sleep intake are apparent on the weekdays vs. the weekends**  
+Finally, this EDA also identified some differences in the physical activity outputs and sleep records among Fitbit users when comparing the weekdays from the weekends. In particular, I found out that daily steps, as well as calories burn, tend to ramp up at a later time during the weekends than the weekdays. These physical activity outputs also tend to be higher from late morning to afternoon on the weekends than the weekdays. Moreover, a shift was noticeable towards the end of the day, with the daily steps and calories burn being higher during the weekdays than the weekends. Furthermore, sleep intake and time in bed were generally higher on the weekends than the weekdays. Overall, these key trends seem to suggest differences in the schedules and activity patterns of Fitbit users between the week types. In that, whereas weekdays tend to be routinary because of work, weekends tend to be more relaxed and provide more opportunities to pursue varied activities, related to health (such as exercise or walking) or leisure (such as shopping or strolling).  
+
+### 5.2 Recommendations for Bellabeat marketing strategy
+Overall, this EDA has generated some insights into how consumers currently use their smart device in maintaining and keeping an active lifestyle. Below I outline the possible implications of these insights to guide future marketing strategy of Bellabeat.  
+
+**1) Promotion of Bellabeat products should target women who are in pursuit of setting and maintaining a healthy, active lifestyle.**  
+One key insight from this EDA is that Fitbit users are individuals who keep a somewhat active lifestyle and have some regularity in their activities. They allot at least some time in a day to engage in intentional exercises and manage to get recommended daily sleep. Promotions for Bellabeat products (particularly the fitness trackers and the app) should then target women who are pursuing a healthy and active lifestyle. Promotional materials should emphasize how Bellabeat wellness products can aid women setting health-related goals and keeping an healthy lifestyle, particularly the health recommendations from the WHO (2010).  
+
+**2) In relation to the first point, promotions should center on concrete ways to keep health-related goals**  
+As revealed by the EDA, Fitbit users can still improve on their daily activities to achieve the physical activity recommendations for health by the WHO (2010). Keeping this in mind, Bellabeat products can be promoted with accompanying materials that could underscore concrete and effective ways of achieving health-related goals set by customers. A study suggest that compared to focusing on the ends of the goal pursuit, focusing on its means provides more benefit to one’s goal progress and well-being (Kaftan & Freund, 2018). Thus, accompanying materials should guide customers on how to see the product’s outputs as a means to their pursuit of health-related goals. The accompaniment should be available, apart from the subscription-based membership program. 
+
+**3) Future data analysis should use real-life data from Bellabeat users to tailor product improvements to their needs and wants.**  
+While the dataset used for the EDA has some limitations to keep in mind, it has shed some insights into current smart device usage. For better insights customized to the needs and wants of Bellabeat customers, future data analysis should be used on their real-life data. Customers should be invited to share their data (provided that they consented and safeguards on are in place) to capitalize on how to improve the Bellabeat products and their promotion. 
+
+## 6. References    
+* Furberg, R., Brinton, J., Keating, M., & Ortiz, A. (2016). Crowd-sourced     Fitbit datasets 03.12.2016-05.12.2016 [Data set]. Zenodo. https://doi.org/10.5281/zenodo.53894  
+* Kaftan, O.J., & Freund, A.M. (2018). The way is the goal: The role of goal focus for successful goal pursuit and subjective well-being. In E. Diener, S. Oishi, & L. Tay (Eds.), Handbook of well-being. Salt Lake City, UT: DEF Publishers. DOI:nobascholar.com
+* R Core Team (2021). R: A language and environment for
+  statistical computing. R Foundation for Statistical
+  Computing, Vienna, Austria. URL https://www.R-project.org/.
+* Soni, Y. (2018). How I analyzed the data from my Fitbit to improve my overall health. Retrieved on Feb. 027, 2022 from https://www.freecodecamp.org/news/how-i-analyzed-the-data-from-my-fitbit-to-improve-my-overall-health-a2e36426d8f9/. 
+* Torre, I., Sanchez, O. R., Koceva, F., & Adorni, G. (2018). Supporting users to take informed decisions on privacy settings of personal devices. *Personal and Ubiquitous Computing, 22*(2), 345–364.https://doi.org/10.1007/s00779-017-1068-3. 
+* Watson N.F., Badr M.S., Belenky G., Bliwise, D.L., Buxton, O.M., Buysse, D., Dinges, D.F., Gangwisch, J., Grandner, M.A., Kushida, C., Malhotara, R., Martin, J.L., Patel, S., Quan, S.F., & Tasali E. (2015). Recommended amount of sleep for a healthy adult: a joint consensus statement of the American Academy of Sleep Medicine and Sleep Research Society. *Sleep, 38*(6):843–844.
+* World Health Organization. Regional Office for the Western Pacific. (2008). Pacific physical activity guidelines for adults : framework for accelerating the communication of physical activity guidelines. WHO Regional Office for the Western Pacific. https://apps.who.int/iris/handle/10665/207007
